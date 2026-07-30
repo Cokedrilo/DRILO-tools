@@ -9,6 +9,6 @@ requires-python = ">=3.10"
 Repository = "https://github.com/Cokedrilo/DRILO-tools"
 
 [tool.comfy]
-PublisherId = "drilo"
+PublisherId = "cokedrilo"
 DisplayName = "🐊 DRILO-tools"
 Icon = "🐊"
