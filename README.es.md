@@ -14,6 +14,24 @@ Run, para que puedas comparar prompts con una seed fija.
 
 *[Documentation in English](README.md)*
 
+
+## Cómo encajan los dos nodos
+
+```mermaid
+flowchart LR
+    MP["🐊 MultiPrompt"] -->|"prompt (STRING)"| ENC["CLIPTextEncode"]
+    ENC --> KS["KSampler<br/><i>seed: fixed</i>"]
+    KS --> DEC["VAEDecodeAudio"]
+    DEC -->|"batch de AUDIO"| AME["🐊 AudioMultiExport"]
+    AME -->|"marcas un checkbox"| OUT[("output/")]
+    OUT -->|"→ Resolve"| POOL["Media pool de Resolve<br/><i>bin + metadatos</i>"]
+    POOL -.->|"placement = playhead / end"| TL["Pista de audio de la timeline"]
+```
+
+MultiPrompt varía el texto mientras la seed se queda fija, así que cada toma se
+diferencia solo por su prompt. AudioMultiExport te deja quedarte con las que
+funcionaron y arrastra la seed y el prompt hasta Resolve.
+
 ---
 
 ## Instalación
@@ -102,6 +120,27 @@ se apilan debajo (`#4`…`#7`) en vez de reemplazar la lista, y la #1 sigue
 marcada. A partir de 8 filas el nodo deja de crecer y la lista hace scroll.
 **Clear list** vacía la vista sin tocar nada de lo que ya guardaste.
 
+### En qué estado puede estar una fila
+
+```mermaid
+stateDiagram-v2
+    [*] --> Preview : se ejecuta el workflow
+    Preview : <b>Preview</b><br/>solo en temp/, nada que conservar
+    Saved : <b>Guardada</b><br/>escrita en output/, borde verde
+    InPool : <b>En Resolve</b><br/>clip en el media pool
+    Orphan : <b>Clip huérfano</b><br/>aviso en ámbar
+    Expired : <b>Caducada</b><br/>checkbox deshabilitado
+
+    Preview --> Saved : marcas el checkbox
+    Saved --> Preview : desmarcas (archivo borrado)
+    Saved --> InPool : pulsas → Resolve
+    InPool --> Orphan : desmarcas (archivo borrado,<br/>clip abandonado)
+    Preview --> Expired : reinicio de ComfyUI<br/>(temp/ se limpia)
+```
+
+El salto de `Guardada` a `En Resolve` es de ida y a propósito: el pack nunca
+quita un clip del media pool, porque podrías tenerlo ya puesto en una timeline.
+
 ### Detalles de comportamiento
 
 - **Los previews viven en `temp/`.** Cada muestra se escribe ahí como FLAC con
@@ -155,6 +194,21 @@ clip de debajo es peor que un aviso.
 Con `resolve_placement = playhead` el clip va a la pista `resolve_audio_track` en
 la posición del cabezal. Con `end` se pega al final. La pista se crea si no
 existe.
+
+```mermaid
+flowchart TD
+    A["se pulsa → Resolve"] --> B{"¿ya guardado<br/>en output/?"}
+    B -->|no| C["el botón está deshabilitado"]
+    B -->|sí| D["importa al bin<br/>+ pone nombre y metadatos"]
+    D --> E{"resolve_placement"}
+    E -->|bin| F["listo"]
+    E -->|playhead / end| G["fotografía la pista"]
+    G --> H["AppendToTimeline"]
+    H --> I["vuelve a fotografiar y compara"]
+    I -->|"apareció un clip nuevo"| J["informa de su posición real"]
+    I -->|"no apareció nada"| K["avisa: está en el bin,<br/>no en la timeline"]
+    I -->|"más corto de lo esperado"| L["avisa: entró recortado"]
+```
 
 **Cuidado: `playhead` solo funciona si ese tramo de la pista está libre.** Medido
 contra Resolve 21, cuando `recordFrame` cae sobre material existente,
@@ -259,6 +313,33 @@ Verificado: 3 cajas y 4 generaciones dieron una sola seed (12345), cuatro índic
 (0-3), y **tres audios únicos de cuatro archivos** — las tomas 1 y 4 compartían
 caja y salieron byte a byte idénticas. Eso confirma las dos mitades a la vez: el
 prompt cambia el resultado y la seed no se movió.
+
+### Cómo funciona el ciclado
+
+```mermaid
+flowchart LR
+    subgraph R["Run 1 - index 0"]
+        direction TB
+        A1["caja 1 ✓"] --- A2["caja 2"] --- A3["caja 3"]
+    end
+    subgraph S["Run 2 - index 1"]
+        direction TB
+        B1["caja 1"] --- B2["caja 2 ✓"] --- B3["caja 3"]
+    end
+    subgraph T["Run 3 - index 2"]
+        direction TB
+        C1["caja 1"] --- C2["caja 2"] --- C3["caja 3 ✓"]
+    end
+    subgraph U["Run 4 - index 3"]
+        direction TB
+        D1["caja 1 ✓"] --- D2["caja 2"] --- D3["caja 3"]
+    end
+    R --> S --> T --> U
+```
+
+El índice da la vuelta con un módulo, así que el run 4 vuelve a la caja 1. Con
+`skip_empty` activado, las cajas vacías se quedan fuera de la rotación en vez de
+emitir texto vacío.
 
 ### Detalles
 

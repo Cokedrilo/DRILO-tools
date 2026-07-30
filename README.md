@@ -14,6 +14,24 @@ every Run, so you can compare prompts against a fixed seed.
 
 *[Documentación en español](README.es.md)*
 
+
+## How the two nodes fit together
+
+```mermaid
+flowchart LR
+    MP["🐊 MultiPrompt"] -->|"prompt (STRING)"| ENC["CLIPTextEncode"]
+    ENC --> KS["KSampler<br/><i>seed: fixed</i>"]
+    KS --> DEC["VAEDecodeAudio"]
+    DEC -->|"AUDIO batch"| AME["🐊 AudioMultiExport"]
+    AME -->|"tick a checkbox"| OUT[("output/")]
+    OUT -->|"→ Resolve"| POOL["Resolve media pool<br/><i>bin + metadata</i>"]
+    POOL -.->|"placement = playhead / end"| TL["Timeline audio track"]
+```
+
+MultiPrompt varies the text while the seed stays fixed, so every take differs
+only by its prompt. AudioMultiExport then lets you keep the takes that worked and
+carries the seed and the prompt through to Resolve.
+
 ---
 
 ## Install
@@ -100,6 +118,28 @@ Hit **Run** again. With `accumulate` on, the four new samples stack underneath
 node stops growing and the list scrolls. **Clear list** empties the view without
 touching anything you already saved.
 
+### What a row can be
+
+```mermaid
+stateDiagram-v2
+    [*] --> Preview : workflow runs
+    Preview : <b>Preview</b><br/>temp/ only, nothing on disk to keep
+    Saved : <b>Saved</b><br/>written to output/, green border
+    InPool : <b>In Resolve</b><br/>clip in the media pool
+    Orphan : <b>Orphan clip</b><br/>amber warning
+    Expired : <b>Expired</b><br/>checkbox disabled
+
+    Preview --> Saved : tick checkbox
+    Saved --> Preview : untick (file deleted)
+    Saved --> InPool : press → Resolve
+    InPool --> Orphan : untick (file deleted,<br/>clip left behind)
+    Preview --> Expired : ComfyUI restart<br/>(temp/ cleared)
+```
+
+The jump from `Saved` to `In Resolve` is one-way on purpose: the pack never
+removes a clip from the media pool, because you may already have placed it on a
+timeline.
+
 ### Behaviour details
 
 - **Previews live in `temp/`.** Each sample is written there as FLAC under a
@@ -153,6 +193,21 @@ pulling a clip out from under you is worse than a warning.
 With `resolve_placement = playhead` the clip goes to track
 `resolve_audio_track` at the playhead position. With `end` it is appended. The
 track is created if it does not exist.
+
+```mermaid
+flowchart TD
+    A["→ Resolve pressed"] --> B{"already saved<br/>to output/?"}
+    B -->|no| C["button is disabled"]
+    B -->|yes| D["import into bin<br/>+ set name & metadata"]
+    D --> E{"resolve_placement"}
+    E -->|bin| F["done"]
+    E -->|playhead / end| G["snapshot the track"]
+    G --> H["AppendToTimeline"]
+    H --> I["snapshot again, diff"]
+    I -->|"a new clip appeared"| J["report its real position"]
+    I -->|"nothing appeared"| K["warn: in the bin,<br/>not on the timeline"]
+    I -->|"shorter than expected"| L["warn: landed truncated"]
+```
 
 **Careful: `playhead` only works if that stretch of the track is free.** Measured
 against Resolve 21, when `recordFrame` lands on existing track material
@@ -258,6 +313,33 @@ Verified: 3 boxes and 4 generations produced one seed (12345), four indices
 (0-3), and **three unique audio files out of four** — takes 1 and 4 shared a box
 and came out byte-identical. That confirms both halves at once: the prompt
 changes the result, and the seed did not move.
+
+### How the cycling works
+
+```mermaid
+flowchart LR
+    subgraph R["Run 1 - index 0"]
+        direction TB
+        A1["box 1 ✓"] --- A2["box 2"] --- A3["box 3"]
+    end
+    subgraph S["Run 2 - index 1"]
+        direction TB
+        B1["box 1"] --- B2["box 2 ✓"] --- B3["box 3"]
+    end
+    subgraph T["Run 3 - index 2"]
+        direction TB
+        C1["box 1"] --- C2["box 2"] --- C3["box 3 ✓"]
+    end
+    subgraph U["Run 4 - index 3"]
+        direction TB
+        D1["box 1 ✓"] --- D2["box 2"] --- D3["box 3"]
+    end
+    R --> S --> T --> U
+```
+
+The index wraps with a modulo, so run 4 comes back to box 1. With `skip_empty`
+on, empty boxes are left out of the rotation entirely rather than emitting empty
+text.
 
 ### Details
 
