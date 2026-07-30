@@ -1,0 +1,14 @@
+[project]
+name = "drilo-tools"
+description = "ComfyUI nodes for audio and prompts: AudioMultiExport (audition a batch, keep the good takes, send them to DaVinci Resolve) and MultiPrompt (several text boxes, one per Run)."
+version = "1.0.0"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+
+[project.urls]
+Repository = "https://github.com/Cokedrilo/DRILO-tools"
+
+[tool.comfy]
+PublisherId = "drilo"
+DisplayName = "🐊 DRILO-tools"
+Icon = "🐊"

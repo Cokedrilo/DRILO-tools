@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# local publishing helper, not part of the node pack
+publish.sh
